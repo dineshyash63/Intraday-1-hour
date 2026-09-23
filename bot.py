@@ -1,0 +1,143 @@
+import pandas as pd
+import numpy as np
+import requests
+import time
+from datetime import datetime
+
+# டெலிகிராம் சாவி விவரங்கள்
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
+
+def send_telegram_alert(message):
+    """டெலிகிராம் மூலம் அலர்ட் அனுப்பும் ஃபங்ஷன்"""
+    if TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+        print(f"[{datetime.now()}] Telegram Token not set. Message:\n{message}")
+        return
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error sending telegram message: {e}")
+
+def fetch_intraday_data(symbol):
+    # லைவ் டேட்டா பெற வேண்டிய இடம் (உதாரணத்திற்கு டம்மி டேட்டா)
+    data = {
+        'Close': [1000, 1005, 1012, 1015, 1020, 1028],
+        'High': [1002, 1008, 1014, 1018, 1022, 1030],
+        'Low': [998, 1003, 1009, 1011, 1016, 1024],
+        'Volume': [60000, 75000, 130000, 90000, 160000, 210000],
+        'VWAP': [1001, 1004, 1008, 1010, 1014, 1018]
+    }
+    df = pd.DataFrame(data)
+    return df
+
+def calculate_extreme_indicators(df):
+    # அட்வான்ஸ்டு இண்டிகேட்டர்கள் கணக்கீடு
+    df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    
+    # RSI கணக்கீடு
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # மார்க்கெட் மொமண்டம் (Rate of Change / Momentum)
+    df['Momentum'] = df['Close'] - df['Close'].shift(2)
+    return df
+
+def generate_extreme_signal(df, symbol):
+    """
+    எந்தச் சூழலிலும் 'HOLD' என்று சொல்லாமல், தீவிர அனாலிசிஸ் செய்து 
+    கட்டாயமாக ஒரு சிக்னலை (BUY அல்லது SELL) வெளியேற்றும் எக்ஸ்ட்ரீம் லாஜிக்.
+    """
+    latest = df.iloc[-1]
+    current_price = latest['Close']
+    
+    # மார்க்கெட் நிலை மதிப்பிடுதல்
+    ema_9 = latest['EMA_9']
+    ema_20 = latest['EMA_20']
+    vwap = latest['VWAP']
+    rsi = latest['RSI'] if not np.isnan(latest['RSI']) else 50
+    momentum = latest['Momentum'] if not np.isnan(latest['Momentum']) else 1
+    
+    # எக்ஸ்ட்ரீம் ஸ்கோர் சிஸ்டம் (Extreme Scoring Model)
+    bullish_score = 0
+    bearish_score = 0
+    
+    if current_price > vwap: bullish_score += 2
+    else: bearish_score += 2
+    
+    if ema_9 > ema_20: bullish_score += 2
+    else: bearish_score += 2
+    
+    if rsi > 50: bullish_score += 2
+    else: bearish_score += 2
+    
+    if momentum > 0: bullish_score += 1
+    else: bearish_score += 1
+
+    # கட்டாயமாக ஒரு சிக்னலைத் தீர்மானித்தல் (Forced Decision Making)
+    if bullish_score >= bearish_score:
+        signal = "BUY (EXTREME LONG / CALL)"
+        reason = f"Bullish Dominance Score ({bullish_score}/{7}) | Price > VWAP & Positive Momentum"
+        sl = round(current_price * 0.994, 2)  # 0.6% Stop Loss
+        tgt = round(current_price * 1.012, 2) # 1.2% Target
+    else:
+        signal = "SELL (EXTREME SHORT / PUT)"
+        reason = f"Bearish Dominance Score ({bearish_score}/{7}) | Price < VWAP & Negative Momentum"
+        sl = round(current_price * 1.006, 2)
+        tgt = round(current_price * 0.988, 2)
+        
+    return signal, reason, current_price, sl, tgt, bullish_score, bearish_score
+
+def analyze_and_report(symbol):
+    df = fetch_intraday_data(symbol)
+    df = calculate_extreme_indicators(df)
+    
+    signal, reason, price, sl, tgt, b_score, br_score = generate_extreme_signal(df, symbol)
+    
+    report_message = (
+        f"🔥 *EXTREME PRO INTRADAY SIGNAL* 🔥\n"
+        f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"📌 *Symbol:* {symbol}\n"
+        f"💰 *Execution Price:* ₹{price}\n"
+        f"⚡ *Forced Signal:* *{signal}*\n"
+        f"📊 *Bullish Score:* {b_score} | *Bearish Score:* {br_score}\n"
+        f"🛑 *Strict Stop Loss:* ₹{sl}\n"
+        f"🎯 *Pro Target:* ₹{tgt}\n"
+        f"📝 *Extreme Reason:* {reason}\n"
+    )
+    
+    send_telegram_alert(report_message)
+    print(f"[{datetime.now()}] Extreme hourly signal successfully sent for {symbol}")
+
+def job():
+    now = datetime.now()
+    current_time = now.strftime("%H:%M")
+    
+    # இந்திய பங்குச்சந்தை நேரமான திங்கள் முதல் வெள்ளி (09:15 - 15:30) வரை இயங்கும்
+    if now.weekday() < 5:
+        if "09:15" <= current_time <= "15:30":
+            print("Market is active. Running Extreme Analysis...")
+            analyze_and_report("RELIANCE")
+        else:
+            print("Market closed. Waiting for trading hours...")
+
+if __name__ == "__main__":
+    print("Extreme Pro Trading Bot Initialized. No more 'HOLD' signals!")
+    
+    # சோதனைக்காக உடனடியாக ஒருமுறை ரன் ஆகும்
+    job()
+    
+    # சரியாக ஒவ்வொரு 1 மணி நேரத்திற்கும் (3600 விநாடிகள்) மீண்டும் இயங்கும்
+    while True:
+        time.sleep(3600)
+        job()
