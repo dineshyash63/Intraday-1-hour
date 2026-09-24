@@ -1,0 +1,27 @@
+name: Hourly Trading Bot
+
+on:
+  schedule:
+    - cron: '0 9-15 * * 1-5' # Mon-Fri, every hour from 9 AM to 3 PM IST (UTC adjusted)
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install yfinance requests pandas
+
+      - name: Run bot script
+        run: |
+          python bot.py
+          
