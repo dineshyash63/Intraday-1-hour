@@ -4,11 +4,11 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-# Telegram Bot Credentials
+# Telegram Credentials
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# High-Liquidity NSE Watchlist
+# Large Watchlist to ensure hourly signals are always found
 WATCHLIST = [
     "RELIANCE.NS",
     "TCS.NS",
@@ -42,23 +42,21 @@ def send_telegram_message(message):
         "parse_mode": "Markdown",
     }
     try:
-      response = requests.post(url, json=payload, timeout=10)
-      print(f"Telegram response: {response.status_code}")
+      requests.post(url, json=payload, timeout=10)
     except Exception as e:
       print(f"Telegram error: {e}")
 
 
-def get_bulletproof_signals():
+def run_guaranteed_hourly_bot():
   signals = []
+  time_str = datetime.now().strftime("%d-%m-%Y %H:%M")
 
   for stock in WATCHLIST:
     try:
-      # Fetch 5 days to ensure data is always available without empty returns
       df = yf.download(stock, period="5d", interval="15m", progress=False)
-      if df.empty or len(df) < 10:
+      if df.empty or len(df) < 5:
         continue
 
-      # Handle multi-index columns returned by newer yfinance versions
       if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -66,25 +64,19 @@ def get_bulletproof_signals():
       prev_close = float(df["Close"].iloc[-2])
       high_price = float(df["High"].iloc[-1])
       low_price = float(df["Low"].iloc[-1])
-      volume = float(df["Volume"].iloc[-1])
-      avg_volume = float(df["Volume"].mean()) if "Volume" in df else 1.0
 
-      # Calculate percentage change
       pct_change = ((current_price - prev_close) / prev_close) * 100
-
-      # Determine action (BUY if positive momentum, SELL if negative momentum)
       action = "BUY" if pct_change >= 0 else "SELL"
 
-      # Calculate Risk & Targets dynamically
       if action == "BUY":
-        sl = low_price * 0.995
+        sl = low_price * 0.992
         target = current_price + ((current_price - sl) * 1.5)
       else:
-        sl = high_price * 1.005
+        sl = high_price * 1.008
         target = current_price - ((sl - current_price) * 1.5)
 
-      # Momentum score calculation
-      score = abs(pct_change) * (volume / avg_volume if avg_volume > 0 else 1.0)
+      # Score based on absolute momentum to sort the best available stocks
+      score = abs(pct_change)
 
       signals.append({
           "stock": stock.replace(".NS", ""),
@@ -98,13 +90,12 @@ def get_bulletproof_signals():
     except Exception as e:
       print(f"Error processing {stock}: {e}")
 
-  # Sort by highest momentum score to guarantee top 5 signals
+  # Sort by highest momentum score to guarantee top 5 signals every hour
   signals = sorted(signals, key=lambda x: x["score"], reverse=True)
   top_signals = signals[:5]
 
-  time_str = datetime.now().strftime("%d-%m-%Y %H:%M")
   msg_lines = [
-      "🎯 *GUARANTEED TOP 5 INTRADAY SIGNALS* 🎯",
+      "⚡ *GUARANTEED HOURLY TOP 5 SIGNALS* ⚡",
       f"🕒 *Time:* {time_str} IST",
       "----------------------------------------",
   ]
@@ -121,7 +112,7 @@ def get_bulletproof_signals():
       msg_lines.append(s_text)
   else:
     msg_lines.append(
-        "⚠️ Market data scanning... will fetch signals shortly."
+        "⚠️ Hourly check completed. Fetching next market momentum..."
     )
 
   final_message = "\n".join(msg_lines)
@@ -129,5 +120,5 @@ def get_bulletproof_signals():
 
 
 if __name__ == "__main__":
-  get_bulletproof_signals()
-        
+  run_guaranteed_hourly_bot()
+    
