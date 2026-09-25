@@ -2,7 +2,7 @@ name: Hourly Trading Bot
 
 on:
   schedule:
-    # Monday to Friday, every hour during market time (9 AM to 3 PM IST)
+    # Monday to Friday, every hour from 9 AM to 3 PM IST
     - cron: '0 9-15 * * 1-5'
   workflow_dispatch:
 
@@ -20,7 +20,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance requests pandas
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run bot script
         run: |
